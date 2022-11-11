@@ -68,7 +68,9 @@ fn unpadding(data: Vec<u8>) -> Vec<u8> {
     data[0..(data.len() - data[data.len() - 1] as usize)].to_vec()
 }
 
-fn set_key(key: &[u8], mode: &str) -> Vec<u32> {
+fn set_key<B: AsRef<[u8]>, S: AsRef<str>>(key: B, mode: S) -> Vec<u32> {
+    let key = key.as_ref();
+    let mode = mode.as_ref();
     let mut sk: Vec<u32> = vec![0; 32];
     let mut mk: Vec<u32> = vec![0, 0, 0, 0];
     let mut k: Vec<u32> = vec![0; 36];
@@ -113,9 +115,9 @@ fn one_round(sk: Vec<u32>, in_put: Vec<u8>) -> Vec<u8> {
     out_put
 }
 
-fn encrypt_ecb(input_data: &[u8], key: &[u8]) -> Vec<u8> {
+pub fn encrypt_ecb<B: AsRef<[u8]>, K: AsRef<[u8]>>(input_data: B, key: K) -> Vec<u8> {
     let sk = set_key(key, "SM4_ENCRYPT");
-    let input_data = padding(input_data.to_vec());
+    let input_data = padding(input_data.as_ref().to_vec());
     let mut length = input_data.len();
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
@@ -130,23 +132,20 @@ fn encrypt_ecb(input_data: &[u8], key: &[u8]) -> Vec<u8> {
     output_data
 }
 
-fn encrypt_ecb_base64(input_data: &[u8], key: &[u8]) -> String {
+fn encrypt_ecb_base64<B: AsRef<[u8]>, K: AsRef<[u8]>>(input_data: B, key: K) -> String {
     base64::encode(encrypt_ecb(input_data, key))
 }
 
-fn encrypt_ecb_hex(input_data: &[u8], key: &[u8]) -> String {
+fn encrypt_ecb_hex<B: AsRef<[u8]>, K: AsRef<[u8]>>(input_data: B, key: K) -> String {
     hex::encode(encrypt_ecb(input_data, key))
 }
 
-fn encrypt_ecb_to_file(input_file: &str, output_file: &str, key: &[u8]) {
-    let input_file = std::path::Path::new(input_file);
-    let output_file = std::path::Path::new(output_file);
-    let input_data = std::fs::read(input_file).unwrap();
-    let output_data = encrypt_ecb(&input_data, key);
-    std::fs::write(output_file, &output_data[..]).unwrap();
-}
-
-fn decrypt_ecb(input_data: &[u8], key: &[u8]) -> Vec<u8> {
+pub fn decrypt_ecb<B, K>(input_data: B, key: K) -> Vec<u8>
+where
+    B: AsRef<[u8]>,
+    K: AsRef<[u8]>,
+{
+    let input_data = input_data.as_ref();
     let sk = set_key(key, "SM4_DECRYPT");
     let mut length = input_data.len();
     let mut i = 0;
@@ -162,29 +161,34 @@ fn decrypt_ecb(input_data: &[u8], key: &[u8]) -> Vec<u8> {
     unpadding(output_data)
 }
 
-fn decrypt_ecb_base64(input_data: &str, key: &[u8]) -> Vec<u8> {
+pub fn decrypt_ecb_base64<B, K>(input_data: B, key: K) -> Vec<u8>
+where
+    B: AsRef<[u8]>,
+    K: AsRef<[u8]>,
+{
     decrypt_ecb(&base64::decode(input_data).unwrap(), key)
 }
 
-fn decrypt_ecb_hex(input_data: &str, key: &[u8]) -> Vec<u8> {
+pub fn decrypt_ecb_hex<B, K>(input_data: B, key: K) -> Vec<u8>
+where
+    B: AsRef<[u8]>,
+    K: AsRef<[u8]>,
+{
     decrypt_ecb(&hex::decode(input_data).unwrap(), key)
 }
 
-fn decrypt_ecb_from_file(input_file: &str, output_file: &str, key: &[u8]) {
-    let input_file = std::path::Path::new(input_file);
-    let output_file = std::path::Path::new(output_file);
-    let input_data = std::fs::read(input_file).unwrap();
-    let output_data = decrypt_ecb(&input_data, key);
-    std::fs::write(output_file, &output_data[..]).unwrap()
-}
-
-fn encrypt_cbc(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
-    let sk = set_key(key, "SM4_ENCRYPT");
+pub fn encrypt_cbc<B, K, V>(input_data: B, key: K, iv: V) -> Vec<u8>
+where
+    B: AsRef<[u8]>,
+    K: AsRef<[u8]>,
+    V: AsRef<[u8]>,
+{
+    let sk = set_key(key.as_ref(), "SM4_ENCRYPT");
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
     let mut tmp_input: Vec<u8>;
-    let mut iv = iv.to_vec();
-    let input_data = padding(input_data.to_vec());
+    let mut iv = iv.as_ref().to_vec();
+    let input_data = padding(input_data.as_ref().to_vec());
     let mut length = input_data.len();
     while length > 0 {
         tmp_input = xor(&input_data[i..(i + 16)].to_vec(), &iv[0..16].to_vec());
@@ -196,27 +200,35 @@ fn encrypt_cbc(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
     output_data
 }
 
-fn encrypt_cbc_base64(input_data: &[u8], key: &[u8], iv: &[u8]) -> String {
+pub fn encrypt_cbc_base64<B, K, V>(input_data: B, key: K, iv: V) -> String
+where
+    B: AsRef<[u8]>,
+    K: AsRef<[u8]>,
+    V: AsRef<[u8]>,
+{
     base64::encode(encrypt_cbc(input_data, key, iv))
 }
 
-fn encrypt_cbc_hex(input_data: &[u8], key: &[u8], iv: &[u8]) -> String {
+pub fn encrypt_cbc_hex<B, K, V>(input_data: B, key: K, iv: V) -> String
+where
+    B: AsRef<[u8]>,
+    K: AsRef<[u8]>,
+    V: AsRef<[u8]>,
+{
     hex::encode(encrypt_cbc(input_data, key, iv))
 }
 
-fn encrypt_cbc_to_file(input_file: &str, output_file: &str, key: &[u8], iv: &[u8]) {
-    let input_file = std::path::Path::new(input_file);
-    let output_file = std::path::Path::new(output_file);
-    let input_data = std::fs::read(input_file).unwrap();
-    let output_data = encrypt_cbc(&input_data, key, iv);
-    std::fs::write(output_file, &output_data[..]).unwrap();
-}
-
-fn decrypt_cbc(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
-    let sk = set_key(key, "SM4_DECRYPT");
+pub fn decrypt_cbc<B, K, V>(input_data: B, key: K, iv: V) -> Vec<u8>
+where
+    B: AsRef<[u8]>,
+    K: AsRef<[u8]>,
+    V: AsRef<[u8]>,
+{
+    let input_data = input_data.as_ref();
+    let sk = set_key(key.as_ref(), "SM4_DECRYPT");
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
-    let mut iv = iv.to_vec();
+    let mut iv = iv.as_ref().to_vec();
     let mut length = input_data.len();
     while length > 0 {
         output_data.append(&mut one_round(
@@ -234,20 +246,22 @@ fn decrypt_cbc(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
     unpadding(output_data)
 }
 
-fn decrypt_cbc_base64(input_data: &str, key: &[u8], iv: &[u8]) -> Vec<u8> {
+pub fn decrypt_cbc_base64<B, K, V>(input_data: B, key: K, iv: V) -> Vec<u8>
+where
+    B: AsRef<[u8]>,
+    K: AsRef<[u8]>,
+    V: AsRef<[u8]>,
+{
     decrypt_cbc(&base64::decode(input_data).unwrap(), key, iv)
 }
 
-fn decrypt_cbc_hex(input_data: &str, key: &[u8], iv: &[u8]) -> Vec<u8> {
+pub fn decrypt_cbc_hex<B, K, V>(input_data: B, key: K, iv: V) -> Vec<u8>
+where
+    B: AsRef<[u8]>,
+    K: AsRef<[u8]>,
+    V: AsRef<[u8]>,
+{
     decrypt_cbc(&hex::decode(input_data).unwrap(), key, iv)
-}
-
-fn decrypt_cbc_from_file(input_file: &str, output_file: &str, key: &[u8], iv: &[u8]) {
-    let input_file = std::path::Path::new(input_file);
-    let output_file = std::path::Path::new(output_file);
-    let input_data = std::fs::read(input_file).unwrap();
-    let output_data = decrypt_cbc(&input_data, key, iv);
-    std::fs::write(output_file, output_data).unwrap()
 }
 
 pub struct CryptSM4ECB<'a> {
@@ -255,40 +269,32 @@ pub struct CryptSM4ECB<'a> {
 }
 
 impl<'a> CryptSM4ECB<'a> {
-    pub fn new(key: &'a [u8]) -> Self {
-        CryptSM4ECB { key }
+    pub fn new<B: AsRef<[u8]>>(key: &'a B) -> Self {
+        CryptSM4ECB { key: key.as_ref() }
     }
 
-    pub fn encrypt_ecb(&self, input_data: &[u8]) -> Vec<u8> {
+    pub fn encrypt_ecb<B: AsRef<[u8]>>(&self, input_data: B) -> Vec<u8> {
         encrypt_ecb(input_data, self.key)
     }
 
-    pub fn encrypt_ecb_base64(&self, input_data: &[u8]) -> String {
+    pub fn encrypt_ecb_base64<B: AsRef<[u8]>>(&self, input_data: B) -> String {
         encrypt_ecb_base64(input_data, self.key)
     }
 
-    pub fn encrypt_ecb_hex(&self, input_data: &[u8]) -> String {
+    pub fn encrypt_ecb_hex<B: AsRef<[u8]>>(&self, input_data: B) -> String {
         encrypt_ecb_hex(input_data, self.key)
     }
 
-    pub fn decrypt_ecb(&self, input_data: &[u8]) -> Vec<u8> {
+    pub fn decrypt_ecb<B: AsRef<[u8]>>(&self, input_data: B) -> Vec<u8> {
         decrypt_ecb(input_data, self.key)
     }
 
-    pub fn decrypt_ecb_base64(&self, input_data: &str) -> Vec<u8> {
+    pub fn decrypt_ecb_base64<B: AsRef<[u8]>>(&self, input_data: B) -> Vec<u8> {
         decrypt_ecb_base64(input_data, self.key)
     }
 
-    pub fn decrypt_ecb_hex(&self, input_data: &str) -> Vec<u8> {
+    pub fn decrypt_ecb_hex<B: AsRef<[u8]>>(&self, input_data: B) -> Vec<u8> {
         decrypt_ecb_hex(input_data, self.key)
-    }
-
-    pub fn encrypt_to_file(&self, input_file: &str, output_file: &str) {
-        encrypt_ecb_to_file(input_file, output_file, self.key)
-    }
-
-    pub fn decrypt_from_file(&self, input_file: &str, output_file: &str) {
-        decrypt_ecb_from_file(input_file, output_file, self.key)
     }
 }
 
@@ -298,39 +304,34 @@ pub struct CryptSM4CBC<'a> {
 }
 
 impl<'a> CryptSM4CBC<'a> {
-    pub fn new(key: &'a [u8], iv: &'a [u8]) -> Self {
-        CryptSM4CBC { key, iv }
+    pub fn new<K: AsRef<[u8]>, B: AsRef<[u8]>>(key: &'a K, iv: &'a B) -> Self {
+        CryptSM4CBC {
+            key: key.as_ref(),
+            iv: iv.as_ref(),
+        }
     }
 
-    pub fn encrypt_cbc(&self, input_data: &[u8]) -> Vec<u8> {
+    pub fn encrypt_cbc<B: AsRef<[u8]>>(&self, input_data: B) -> Vec<u8> {
         encrypt_cbc(input_data, self.key, self.iv)
     }
 
-    pub fn encrypt_cbc_base64(&self, input_data: &[u8]) -> String {
+    pub fn encrypt_cbc_base64<B: AsRef<[u8]>>(&self, input_data: B) -> String {
         encrypt_cbc_base64(input_data, self.key, self.iv)
     }
 
-    pub fn encrypt_cbc_hex(&self, input_data: &[u8]) -> String {
+    pub fn encrypt_cbc_hex<B: AsRef<[u8]>>(&self, input_data: B) -> String {
         encrypt_cbc_hex(input_data, self.key, self.iv)
     }
 
-    pub fn decrypt_cbc(&self, input_data: &[u8]) -> Vec<u8> {
+    pub fn decrypt_cbc<B: AsRef<[u8]>>(&self, input_data: B) -> Vec<u8> {
         decrypt_cbc(input_data, self.key, self.iv)
     }
 
-    pub fn decrypt_cbc_base64(&self, input_data: &str) -> Vec<u8> {
+    pub fn decrypt_cbc_base64<B: AsRef<[u8]>>(&self, input_data: B) -> Vec<u8> {
         decrypt_cbc_base64(input_data, self.key, self.iv)
     }
 
-    pub fn decrypt_cbc_hex(&self, input_data: &str) -> Vec<u8> {
+    pub fn decrypt_cbc_hex<B: AsRef<[u8]>>(&self, input_data: B) -> Vec<u8> {
         decrypt_cbc_hex(input_data, self.key, self.iv)
-    }
-
-    pub fn encrypt_to_file(&self, input_file: &str, output_file: &str) {
-        encrypt_cbc_to_file(input_file, output_file, self.key, self.iv)
-    }
-
-    pub fn decrypt_from_file(&self, input_file: &str, output_file: &str) {
-        decrypt_cbc_from_file(input_file, output_file, self.key, self.iv)
     }
 }

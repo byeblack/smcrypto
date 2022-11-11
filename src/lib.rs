@@ -82,13 +82,14 @@
 //! assert_eq!(String::from_utf8(dec_cbc).unwrap(), "abc");
 //! ```
 
+pub mod error;
 pub mod sm2;
 pub mod sm3;
 pub mod sm4;
 
 #[test]
 fn test_sm() {
-    let hash = sm3::sm3_hash(b"abc");
+    let hash = sm3::sm3_hash(b"abc").unwrap();
     assert_eq!(
         hash,
         "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0"
@@ -97,10 +98,10 @@ fn test_sm() {
     let (sk, pk) = sm2::gen_keypair();
 
     let enc_ctx = sm2::Encrypt::new(&pk);
-    let enc = enc_ctx.encrypt(b"abc");
+    let enc = enc_ctx.encrypt(b"abc").unwrap();
 
     let dec_ctx = sm2::Decrypt::new(&sk);
-    let dec = dec_ctx.decrypt(&enc);
+    let dec = dec_ctx.decrypt(&enc).unwrap();
     let code = String::from_utf8(dec).unwrap();
     assert_eq!(code, "abc");
 }

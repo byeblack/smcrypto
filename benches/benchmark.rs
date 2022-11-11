@@ -21,7 +21,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     let enc_ctx = sm2::Encrypt::new(&pk);
-    let enc = enc_ctx.encrypt(black_box(b"dummy"));
+    let enc = enc_ctx.encrypt(black_box(b"dummy")).unwrap();
     c.bench_function("SM2 Decrypt", |b| {
         b.iter(|| {
             let dec_ctx = sm2::Decrypt::new(black_box(&sk));

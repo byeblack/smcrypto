@@ -1,3 +1,5 @@
+use crate::error::SMError;
+
 fn sm3_ff_j(x: u32, y: u32, z: u32, j: u32) -> u32 {
     let mut ret = 0;
     if j < 16 {
@@ -108,13 +110,16 @@ fn sm3_cf(v_i: &[u32], b_i: &[u32]) -> Vec<u32> {
     cf
 }
 
-pub fn sm3_hash(msg: &[u8]) -> String {
+pub fn sm3_hash<B: AsRef<[u8]>>(msg: B) -> Result<String, SMError> {
     let iv: Vec<u32> = vec![
         1937774191, 1226093241, 388252375, 3666478592, 2842636476, 372324522, 3817729613,
         2969243214,
     ];
-    let mut msg = msg.to_vec();
+    let mut msg = msg.as_ref().to_vec();
     let len1 = msg.len();
+    if len1 == 0 {
+        return Err(SMError::InvalidFieldLen);
+    }
     let mut reserve1 = len1 % 64;
     msg.push(0x80);
     reserve1 += 1;
@@ -153,11 +158,5 @@ pub fn sm3_hash(msg: &[u8]) -> String {
     for i in y {
         result += &format!("{:08x}", i);
     }
-    result
-}
-
-pub fn sm3_hash_file(input_file: &str) -> String {
-    let input_file = std::path::Path::new(input_file);
-    let input_data = std::fs::read(input_file).unwrap();
-    sm3_hash(&input_data)
+    Ok(result)
 }
