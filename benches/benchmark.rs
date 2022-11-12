@@ -8,11 +8,11 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("SM2 Gen Key Pair", |b| {
         b.iter(|| {
-            sm2::gen_keypair();
+            sm2::gen_keypair().unwrap();
         })
     });
 
-    let (sk, pk) = sm2::gen_keypair();
+    let (sk, pk) = sm2::gen_keypair().unwrap();
     c.bench_function("SM2 Encrypt", |b| {
         b.iter(|| {
             let enc_ctx = sm2::Encrypt::new(black_box(&pk));

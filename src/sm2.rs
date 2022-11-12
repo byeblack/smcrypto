@@ -238,13 +238,23 @@ fn convert_jacb_to_nor(point: Point) -> Point {
     }
 }
 
-fn kg(k: BigUint, point: &str) -> Point {
+fn kg(k: BigUint, point: &str) -> Result<Point, SMError> {
     let mut k = k;
     let point: String = point.to_string() + "1";
     let point = Point {
-        x: BigUint::from_str_radix(&point[0..*PARA_LEN], 16).unwrap(),
-        y: BigUint::from_str_radix(&point[*PARA_LEN..(*PARA_LEN * 2)], 16).unwrap(),
-        z: BigUint::from_str_radix(&point[(*PARA_LEN * 2)..], 16).unwrap(),
+        x: BigUint::from_str_radix(point.get(0..*PARA_LEN).ok_or(SMError::InvalidFieldLen)?, 16)?,
+        y: BigUint::from_str_radix(
+            point
+                .get(*PARA_LEN..(*PARA_LEN * 2))
+                .ok_or(SMError::InvalidFieldLen)?,
+            16,
+        )?,
+        z: BigUint::from_str_radix(
+            point
+                .get((*PARA_LEN * 2)..)
+                .ok_or(SMError::InvalidFieldLen)?,
+            16,
+        )?,
     };
     let mut mask_str = "8".to_string();
     for _ in 0..((*PARA_LEN) - 1) {
@@ -267,27 +277,27 @@ fn kg(k: BigUint, point: &str) -> Point {
         }
         k <<= 1;
     }
-    convert_jacb_to_nor(temp)
+    Ok(convert_jacb_to_nor(temp))
 }
 
 /// Check whether the public key is legal. The input public key may or may not contain the "04" prefix.
-pub fn pubkey_valid<S: AsRef<str>>(public_key: S) -> bool {
+pub fn pubkey_valid<S: AsRef<str>>(public_key: S) -> Result<bool, SMError> {
     let public_key = pubkey_trim(public_key.as_ref());
-    let x: &str = &public_key[0..64];
-    let y: &str = &public_key[64..128];
-    let x = BigUint::from_str_radix(x, 16).unwrap();
-    let y = BigUint::from_str_radix(y, 16).unwrap();
-    let a = BigUint::from_str_radix(&ECC_A, 16).unwrap();
-    let b = BigUint::from_str_radix(&ECC_B, 16).unwrap();
-    let p = BigUint::from_str_radix(&ECC_P, 16).unwrap();
-    let np0 = kg(BigUint::from_str_radix(&ECC_N, 16).unwrap(), public_key)
+    let x: &str = public_key.get(0..64).ok_or(SMError::InvalidFieldLen)?;
+    let y: &str = public_key.get(64..128).ok_or(SMError::InvalidFieldLen)?;
+    let x = BigUint::from_str_radix(x, 16)?;
+    let y = BigUint::from_str_radix(y, 16)?;
+    let a = BigUint::from_str_radix(&ECC_A, 16)?;
+    let b = BigUint::from_str_radix(&ECC_B, 16)?;
+    let p = BigUint::from_str_radix(&ECC_P, 16)?;
+    let np0 = kg(BigUint::from_str_radix(&ECC_N, 16)?, public_key)?
         == Point {
             x: BigUint::zero(),
             y: BigUint::zero(),
             z: BigUint::zero(),
         };
     let on_curve = (&y * &y) % &p == (&x * &x * &x + &a * &x + &b) % &p;
-    np0 && on_curve
+    Ok(np0 && on_curve)
 }
 
 fn pubkey_trim(public_key: &str) -> &str {
@@ -298,66 +308,65 @@ fn pubkey_trim(public_key: &str) -> &str {
     }
 }
 
-pub fn keypair_from_pem_bytes<B: AsRef<[u8]>>(pem_bytes: B) -> (String, String) {
-    let pem = pem::parse(pem_bytes).unwrap();
+pub fn keypair_from_pem_bytes<B: AsRef<[u8]>>(pem_bytes: B) -> Result<(String, String), SMError> {
+    let pem = pem::parse(pem_bytes)?;
     let keyfield = pem.contents;
-    let priv_key = hex::encode(&keyfield[36..68]);
-    let pub_key = hex::encode(&keyfield[74..138]);
-    let pub_key = if !pubkey_valid(&pub_key) && &pub_key[0..2] == "04" {
-        hex::encode(&keyfield[75..139])
+    let priv_key = hex::encode(keyfield.get(36..68).ok_or(SMError::InvalidFieldLen)?);
+    let pub_key = hex::encode(keyfield.get(74..138).ok_or(SMError::InvalidFieldLen)?);
+    let pub_key = if !pubkey_valid(&pub_key)? && &pub_key[0..2] == "04" {
+        hex::encode(keyfield.get(75..139).ok_or(SMError::InvalidFieldLen)?)
     } else {
         pub_key
     };
-    (priv_key, pub_key)
+    Ok((priv_key, pub_key))
 }
 
-pub fn pubkey_from_pem_bytes<B: AsRef<[u8]>>(pem_bytes: B) -> String {
-    let pem = pem::parse(pem_bytes).unwrap();
+pub fn pubkey_from_pem_bytes<B: AsRef<[u8]>>(pem_bytes: B) -> Result<String, SMError> {
+    let pem = pem::parse(pem_bytes)?;
     let keyfield = pem.contents;
-    hex::encode(&keyfield[27..91])
+    Ok(hex::encode(
+        keyfield.get(27..91).ok_or(SMError::InvalidFieldLen)?,
+    ))
 }
 
-pub fn keypair_to_pem_bytes<S: AsRef<str>>(private_key: S) -> Vec<u8> {
-    let public_key = pk_from_sk(private_key.as_ref());
+pub fn keypair_to_pem_bytes<S: AsRef<str>>(private_key: S) -> Result<Vec<u8>, SMError> {
+    let public_key = pk_from_sk(private_key.as_ref())?;
     let pem = format!("308187020100301306072a8648ce3d020106082a811ccf5501822d046d306b0201010420{private}a14403420004{public}",private=private_key.as_ref(),public=public_key);
-    let pem = hex::decode(pem).unwrap();
+    let pem = hex::decode(pem)?;
     let pem = base64::encode(pem);
-    format!(
+    Ok(format!(
         "-----BEGIN PRIVATE KEY-----\n{start}\n{middle}\n{end}\n-----END PRIVATE KEY-----\n",
-        start = &pem[0..64],
-        middle = &pem[64..128],
-        end = &pem[128..]
+        start = &pem.get(0..64).ok_or(SMError::InvalidFieldLen)?,
+        middle = &pem.get(64..128).ok_or(SMError::InvalidFieldLen)?,
+        end = &pem.get(128..).ok_or(SMError::InvalidFieldLen)?
     )
-    .into_bytes()
+    .into_bytes())
 }
 
-pub fn pubkey_to_pem_bytes<S: AsRef<str>>(public_key: S) -> Vec<u8> {
+pub fn pubkey_to_pem_bytes<S: AsRef<str>>(public_key: S) -> Result<Vec<u8>, SMError> {
     let public_key = pubkey_trim(public_key.as_ref());
     let pem = "3059301306072a8648ce3d020106082a811ccf5501822d03420004".to_string() + public_key;
-    let pem = hex::decode(pem).unwrap();
+    let pem = hex::decode(pem)?;
     let pem = base64::encode(pem);
-    format!(
+    Ok(format!(
         "-----BEGIN PUBLIC KEY-----\n{start}\n{end}\n-----END PUBLIC KEY-----\n",
         start = &pem[0..64],
         end = &pem[64..]
     )
-    .into_bytes()
+    .into_bytes())
 }
 
-pub fn gen_keypair() -> (String, String) {
+pub fn gen_keypair() -> Result<(String, String), SMError> {
     let d = random_hex(*PARA_LEN);
-    let pa = kg(BigUint::from_str_radix(&d, 16).unwrap(), &ECC_G);
+    let pa = kg(BigUint::from_str_radix(&d, 16)?, &ECC_G)?;
     let pa = format_hex!(pa.x, pa.y);
-    (d, pa)
+    Ok((d, pa))
 }
 
 /// Calculate public key from a private key.
-pub fn pk_from_sk<S: AsRef<str>>(private_key: S) -> String {
-    let p = kg(
-        BigUint::from_str_radix(private_key.as_ref(), 16).unwrap(),
-        &ECC_G,
-    );
-    format_hex!(p.x, p.y)
+pub fn pk_from_sk<S: AsRef<str>>(private_key: S) -> Result<String, SMError> {
+    let p = kg(BigUint::from_str_radix(private_key.as_ref(), 16)?, &ECC_G)?;
+    Ok(format_hex!(p.x, p.y))
 }
 
 pub fn sign_raw<B: AsRef<[u8]>, P: AsRef<str>>(
@@ -369,7 +378,7 @@ pub fn sign_raw<B: AsRef<[u8]>, P: AsRef<str>>(
     let k = random_hex(*PARA_LEN);
     let k = BigUint::from_str_radix(&k, 16)?;
     let k1 = k.clone();
-    let p1 = kg(k, &ECC_G);
+    let p1 = kg(k, &ECC_G)?;
     let r = (e + p1.x) % BigUint::from_str_radix(&ECC_N, 16)?;
     if r == BigUint::zero() || &r + &k1 == BigUint::from_str_radix(&ECC_N, 16)? {
         Ok(vec![])
@@ -414,8 +423,8 @@ where
     if t == BigUint::zero() {
         Ok(false)
     } else {
-        let mut p1 = kg(s1, &ECC_G);
-        let p2 = kg(t1, public_key.as_ref());
+        let mut p1 = kg(s1, &ECC_G)?;
+        let p2 = kg(t1, public_key.as_ref())?;
         if p1 == p2 {
             p1 = double_point(p1);
         } else {
@@ -433,7 +442,7 @@ where
     D: AsRef<[u8]>,
     P: AsRef<str>,
 {
-    let public_key = pk_from_sk(private_key.as_ref());
+    let public_key = pk_from_sk(private_key.as_ref())?;
     let m_bar = concvec(&hex::decode(zab(&public_key, id.as_ref())?)?, data.as_ref());
     let e = hex::decode(sm3_hash(&m_bar)?)?;
     sign_raw(&e, private_key.as_ref())
@@ -456,11 +465,11 @@ pub fn encrypt<B: AsRef<[u8]>, P: AsRef<str>>(data: B, public_key: P) -> Result<
     let public_key = public_key.as_ref();
 
     let k = random_hex(*PARA_LEN);
-    let c1xyz = kg(BigUint::from_str_radix(k.as_str(), 16).unwrap(), &ECC_G);
+    let c1xyz = kg(BigUint::from_str_radix(k.as_str(), 16).unwrap(), &ECC_G)?;
     let c1x = appendzero(&BigUint::to_bytes_be(&c1xyz.x), *PARA_LEN / 2);
     let c1y = appendzero(&BigUint::to_bytes_be(&c1xyz.y), *PARA_LEN / 2);
     let c1 = concvec(&c1x, &c1y);
-    let xy = kg(BigUint::from_str_radix(k.as_str(), 16).unwrap(), public_key);
+    let xy = kg(BigUint::from_str_radix(k.as_str(), 16).unwrap(), public_key)?;
     let x2 = BigUint::to_bytes_be(&xy.x);
     let y2 = BigUint::to_bytes_be(&xy.y);
     let x2 = appendzero(&x2, *PARA_LEN / 2);
@@ -486,9 +495,9 @@ pub fn decrypt<B: AsRef<[u8]>, S: AsRef<str>>(data: B, private_key: S) -> Result
     let c1 = data.get(0..64).ok_or(SMError::InvalidFieldLen)?;
     let c2 = data.get(96..).ok_or(SMError::InvalidFieldLen)?;
     let xy = kg(
-        BigUint::from_str_radix(private_key.as_ref(), 16).unwrap(),
+        BigUint::from_str_radix(private_key.as_ref(), 16)?,
         &hex::encode(c1),
-    );
+    )?;
 
     let x = appendzero(&BigUint::to_bytes_be(&xy.x), 32);
     let y = appendzero(&BigUint::to_bytes_be(&xy.y), 32);
@@ -652,31 +661,34 @@ fn keyexchange_raw(
     r_public_key: &str,
     is_a: bool,
 ) -> Result<KeyExchangeResult, SMError> {
-    let x2hat = kexhat(BigUint::from_str_radix(&pk_from_sk(r_private_key)[0..64], 16).unwrap());
-    let x2rb = x2hat * BigUint::from_str_radix(r_private_key, 16).unwrap();
-    let tbt = BigUint::from_str_radix(private_key, 16).unwrap() + x2rb;
-    let tb = tbt % BigUint::from_str_radix(&ECC_N, 16).unwrap();
+    let x2hat = kexhat(BigUint::from_str_radix(
+        &pk_from_sk(r_private_key)?[0..64],
+        16,
+    )?);
+    let x2rb = x2hat * BigUint::from_str_radix(r_private_key, 16)?;
+    let tbt = BigUint::from_str_radix(private_key, 16)? + x2rb;
+    let tb = tbt % BigUint::from_str_radix(&ECC_N, 16)?;
     // assert_eq!(pubkey_valid(r_public_key), true);
-    let x1hat = kexhat(
-        BigUint::from_str_radix(r_public_key.get(0..64).ok_or(SMError::InvalidFieldLen)?, 16)
-            .unwrap(),
-    );
-    let kx1y1 = kg(x1hat, r_public_key);
+    let x1hat = kexhat(BigUint::from_str_radix(
+        r_public_key.get(0..64).ok_or(SMError::InvalidFieldLen)?,
+        16,
+    )?);
+    let kx1y1 = kg(x1hat, r_public_key)?;
     let vxyt = add_point(pubkey2point(public_key), kx1y1);
     let vxyt = convert_jacb_to_nor(vxyt);
     let vxyt = format_hex!(vxyt.x, vxyt.y);
-    let vxy = kg(tb, &vxyt);
+    let vxy = kg(tb, &vxyt)?;
     let vx = vxy.x;
     let vy = vxy.y;
     let pza = if is_a {
-        pk_from_sk(private_key)
+        pk_from_sk(private_key)?
     } else {
         public_key.to_string()
     };
     let za = zab(&pza, ida)?;
     // assert_eq!(vx == BigUint::zero() || vy == BigUint::zero(), false);
     let pzb = if !is_a {
-        pk_from_sk(private_key)
+        pk_from_sk(private_key)?
     } else {
         public_key.to_string()
     };
@@ -693,76 +705,52 @@ fn keyexchange_raw(
             &BigUint::to_bytes_be(&vx),
             &za.into_bytes(),
             &zb.into_bytes(),
-            &BigUint::to_bytes_be(
-                &BigUint::from_str_radix(
-                    pk_from_sk(r_private_key)
-                        .get(0..64)
-                        .ok_or(SMError::InvalidFieldLen)?,
-                    16
-                )
-                .unwrap()
-            ),
-            &BigUint::to_bytes_be(
-                &BigUint::from_str_radix(
-                    pk_from_sk(r_private_key)
-                        .get(64..)
-                        .ok_or(SMError::InvalidFieldLen)?,
-                    16
-                )
-                .unwrap()
-            ),
-            &BigUint::to_bytes_be(
-                &BigUint::from_str_radix(
-                    r_public_key.get(0..64).ok_or(SMError::InvalidFieldLen)?,
-                    16
-                )
-                .unwrap()
-            ),
-            &BigUint::to_bytes_be(
-                &BigUint::from_str_radix(
-                    r_public_key.get(64..).ok_or(SMError::InvalidFieldLen)?,
-                    16
-                )
-                .unwrap()
-            )
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(
+                pk_from_sk(r_private_key)?
+                    .get(0..64)
+                    .ok_or(SMError::InvalidFieldLen)?,
+                16
+            )?),
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(
+                pk_from_sk(r_private_key)?
+                    .get(64..)
+                    .ok_or(SMError::InvalidFieldLen)?,
+                16
+            )?),
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(
+                r_public_key.get(0..64).ok_or(SMError::InvalidFieldLen)?,
+                16
+            )?),
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(
+                r_public_key.get(64..).ok_or(SMError::InvalidFieldLen)?,
+                16
+            )?)
         )
     } else {
         concvec!(
             &BigUint::to_bytes_be(&vx),
             &za.into_bytes(),
             &zb.into_bytes(),
-            &BigUint::to_bytes_be(
-                &BigUint::from_str_radix(
-                    r_public_key.get(0..64).ok_or(SMError::InvalidFieldLen)?,
-                    16
-                )
-                .unwrap()
-            ),
-            &BigUint::to_bytes_be(
-                &BigUint::from_str_radix(
-                    r_public_key.get(64..).ok_or(SMError::InvalidFieldLen)?,
-                    16
-                )
-                .unwrap()
-            ),
-            &BigUint::to_bytes_be(
-                &BigUint::from_str_radix(
-                    pk_from_sk(r_private_key)
-                        .get(0..64)
-                        .ok_or(SMError::InvalidFieldLen)?,
-                    16
-                )
-                .unwrap()
-            ),
-            &BigUint::to_bytes_be(
-                &BigUint::from_str_radix(
-                    pk_from_sk(r_private_key)
-                        .get(64..)
-                        .ok_or(SMError::InvalidFieldLen)?,
-                    16
-                )
-                .unwrap()
-            )
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(
+                r_public_key.get(0..64).ok_or(SMError::InvalidFieldLen)?,
+                16
+            )?),
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(
+                r_public_key.get(64..).ok_or(SMError::InvalidFieldLen)?,
+                16
+            )?),
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(
+                pk_from_sk(r_private_key)?
+                    .get(0..64)
+                    .ok_or(SMError::InvalidFieldLen)?,
+                16
+            )?),
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(
+                pk_from_sk(r_private_key)?
+                    .get(64..)
+                    .ok_or(SMError::InvalidFieldLen)?,
+                16
+            )?)
         )
     };
     let hash = sm3_hash(&h1)?;
@@ -831,10 +819,14 @@ fn keyexchange_b(
     )
 }
 
-fn keyexchange_1ab(klen: usize, id: &[u8], private_key: &str) -> (Vec<u8>, String) {
-    let public_key = pk_from_sk(private_key);
-    let (private_key_r, public_key_r) = gen_keypair();
-    (
+fn keyexchange_1ab(
+    klen: usize,
+    id: &[u8],
+    private_key: &str,
+) -> Result<(Vec<u8>, String), SMError> {
+    let public_key = pk_from_sk(private_key)?;
+    let (private_key_r, public_key_r) = gen_keypair()?;
+    Ok((
         yasna::construct_der(|writer| {
             writer.write_sequence(|writer| {
                 writer.next().write_u32(klen as u32);
@@ -844,7 +836,7 @@ fn keyexchange_1ab(klen: usize, id: &[u8], private_key: &str) -> (Vec<u8>, Strin
             });
         }),
         private_key_r,
-    )
+    ))
 }
 
 fn keyexchange_2a(
@@ -862,10 +854,12 @@ fn keyexchange_2a(
             Ok((klen, idb, public_key, public_key_r))
         })
     })
-    .unwrap();
+    .map_err(|e| SMError::Invalid(format!("{}", e)))?;
     let klen = klen as usize;
-    let public_key = std::str::from_utf8(&public_key).unwrap();
-    let public_key_r = std::str::from_utf8(&public_key_r).unwrap();
+    let public_key =
+        std::str::from_utf8(&public_key).map_err(|e| SMError::Invalid(format!("{}", e)))?;
+    let public_key_r =
+        std::str::from_utf8(&public_key_r).map_err(|e| SMError::Invalid(format!("{}", e)))?;
     keyexchange_a(
         klen,
         id,
@@ -892,10 +886,12 @@ fn keyexchange_2b(
             Ok((klen, ida, public_key, public_key_r))
         })
     })
-    .unwrap();
+    .map_err(|e| SMError::Invalid(format!("{}", e)))?;
     let klen = klen as usize;
-    let public_key = std::str::from_utf8(&public_key).unwrap();
-    let public_key_r = std::str::from_utf8(&public_key_r).unwrap();
+    let public_key =
+        std::str::from_utf8(&public_key).map_err(|e| SMError::Invalid(format!("{}", e)))?;
+    let public_key_r =
+        std::str::from_utf8(&public_key_r).map_err(|e| SMError::Invalid(format!("{}", e)))?;
     keyexchange_b(
         klen,
         id,
@@ -1077,7 +1073,7 @@ impl<'a> KeyExchange<'a> {
     }
 
     /// klen is the length of key to generate.
-    pub fn keyexchange_1ab(&self, klen: usize) -> (Vec<u8>, String) {
+    pub fn keyexchange_1ab(&self, klen: usize) -> Result<(Vec<u8>, String), SMError> {
         keyexchange_1ab(klen, self.id, self.private_key)
     }
 

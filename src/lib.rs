@@ -95,7 +95,7 @@ fn test_sm() {
         "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0"
     );
 
-    let (sk, pk) = sm2::gen_keypair();
+    let (sk, pk) = sm2::gen_keypair().unwrap();
 
     let enc_ctx = sm2::Encrypt::new(&pk);
     let enc = enc_ctx.encrypt(b"abc").unwrap();
